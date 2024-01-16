@@ -135,6 +135,9 @@ if {$BOARD == "ZCU104"} {
 } elseif {$BOARD == "KV260_SOM"} {
     set ZYNQ_TYPE "zynq_us+"
     set_property board_part xilinx.com:kv260_som:part0:1.3 [current_project]
+}  elseif {$BOARD == "TySOM-3A-ZU19EG"} {
+    set ZYNQ_TYPE "zynq_us+"
+    set_property board_part aldec.com:TySOM_3A_ZU19EG:part0:1.1 [current_project]
 } else {
     puts "Unrecognized board"
 }
@@ -145,8 +148,16 @@ if {$ZYNQ_TYPE == "zynq_us+"} {
     create_bd_cell -type ip -vlnv $zynq_ps_vlnv zynq_ps
     apply_bd_automation -rule xilinx.com:bd_rule:zynq_ultra_ps_e -config {apply_board_preset "1" }  [get_bd_cells zynq_ps]
     #activate one slave port, deactivate the second master port
-    set_property -dict [list CONFIG.PSU__USE__S_AXI_GP2 {1}] [get_bd_cells zynq_ps]
-    set_property -dict [list CONFIG.PSU__USE__M_AXI_GP1 {0}] [get_bd_cells zynq_ps]
+    # set_property -dict [list CONFIG.PSU__USE__S_AXI_GP2 {1}] [get_bd_cells zynq_ps]
+    # set_property -dict [list CONFIG.PSU__USE__M_AXI_GP1 {0}] [get_bd_cells zynq_ps]
+    set_property -dict [list \
+        CONFIG.PSU__USE__M_AXI_GP0 {1} \
+        CONFIG.PSU__USE__M_AXI_GP1 {0} \
+        CONFIG.PSU__USE__M_AXI_GP2 {0} \
+        CONFIG.PSU__USE__S_AXI_GP2 {1} \
+        CONFIG.PSU__USE__S_AXI_GP3 {0} \
+        CONFIG.PSU__USE__S_AXI_GP4 {0} \
+    ] [get_bd_cells zynq_ps]
     #set frequency of PS clock (this can't always be exactly met)
     set_property -dict [list CONFIG.PSU__OVERRIDE__BASIC_CLOCK {0}] [get_bd_cells zynq_ps]
     set_property -dict [list CONFIG.PSU__CRL_APB__PL0_REF_CTRL__FREQMHZ [expr int($FREQ_MHZ)]] [get_bd_cells zynq_ps]

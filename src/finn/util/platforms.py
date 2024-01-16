@@ -327,6 +327,31 @@ class ZU28DR_Platform(Platform):
     def compute_resources(self):
         return [[425000, 2 * 425000, 2160, 80, 4272] for i in range(1)]
 
+class ZU19EG_Platform(Platform):
+    def __init__(
+        self,
+        ndevices=1,
+        limits=DEFAULT_RES_LIMITS,
+        avg_constraints=DEFAULT_AVG_CONSTRAINTS,
+    ):
+        super(ZU19EG_Platform, self).__init__(
+            nslr=1,
+            ndevices=ndevices,
+            sll_count=[[0]],
+            ddr_slr=[],
+            eth_slr=0,
+            eth_gbps=1,
+            limits=limits,
+            avg_constraints=avg_constraints,
+        )
+
+    @property
+    def compute_resources(self):
+        return [[522720, 2 * 522720, 1968, 128, 1968] for i in range(1)]
+
+
+
+
 
 class Alveo_NxU50_Platform(Platform):
     def __init__(
@@ -503,3 +528,4 @@ platforms["Ultra96"] = ZU3EG_Platform
 platforms["ZCU104"] = ZU7EV_Platform
 platforms["ZCU102"] = ZU9EG_Platform
 platforms["ZCU111"] = ZU28DR_Platform
+platforms["TySOM-3A-ZU19EG"] = ZU19EG_Platform
