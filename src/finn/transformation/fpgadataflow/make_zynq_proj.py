@@ -56,12 +56,12 @@ def collect_ip_dirs(model, ipstitch_path):
     need_memstreamer = False
     for node in model.graph.node:
         node_inst = getCustomOp(node)
-        ip_dir_value = node_inst.get_nodeattr("ip_path")
-        assert os.path.isdir(
-            ip_dir_value
-        ), """The directory that should
-        contain the generated ip blocks doesn't exist."""
-        ip_dirs += [ip_dir_value]
+        # ip_dir_value = node_inst.get_nodeattr("ip_path")
+        # assert os.path.isdir(
+        #     ip_dir_value
+        # ), """The directory that should
+        # contain the generated ip blocks doesn't exist."""
+        # ip_dirs += [ip_dir_value]
         if node.op_type in ["MatrixVectorActivation", "Thresholding_Batch"]:
             if node_inst.get_nodeattr("mem_mode") == "decoupled":
                 need_memstreamer = True
@@ -340,7 +340,7 @@ class ZynqBuild(Transformation):
             kernel_model = kernel_model.transform(PrepareIP(self.fpga_part, self.period_ns))
             kernel_model = kernel_model.transform(HLSSynthIP())
             kernel_model = kernel_model.transform(
-                CreateStitchedIP(self.fpga_part, self.period_ns, sdp_node.onnx_node.name, False)
+                CreateStitchedIP(self.fpga_part, self.period_ns, sdp_node.onnx_node.name, True)
             )
             kernel_model.set_metadata_prop("platform", "zynq-iodma")
             kernel_model.save(dataflow_model_filename)
