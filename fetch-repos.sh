@@ -32,7 +32,7 @@ FINN_EXP_COMMIT="de99347e936d51715f5356a1b6c64e37b91c23c2"
 BREVITAS_COMMIT="84f42259ec869eb151af4cb8a8b23ad925f493db"
 PYVERILATOR_COMMIT="766e457465f5c0dd315490d7b9cc5d74f9a76f4f"
 CNPY_COMMIT="4e8810b1a8637695171ed346ce68f6984e585ef4"
-HLSLIB_COMMIT="16e5847a5e3ef76cffe84c8fad2f010d593457d3"
+HLSLIB_COMMIT="d289fbaf22ea04e545de884233d0a8cb5f27cc2d"
 OMX_COMMIT="0b59762f9e4c4f7e5aa535ee9bc29f292434ca7a"
 AVNET_BDF_COMMIT="2d49cfc25766f07792c0b314489f21fe916b639b"
 XIL_BDF_COMMIT="8cf4bb674a919ac34e3d99d8d71a9e60af93d14e"
@@ -46,7 +46,7 @@ FINN_EXP_URL="https://github.com/Xilinx/finn-experimental.git"
 BREVITAS_URL="https://github.com/Xilinx/brevitas.git"
 PYVERILATOR_URL="https://github.com/maltanar/pyverilator.git"
 CNPY_URL="https://github.com/rogersce/cnpy.git"
-HLSLIB_URL="https://github.com/Xilinx/finn-hlslib.git"
+HLSLIB_URL="https://github.com/hleblevec/finn-hlslib-fork.git"
 OMX_URL="https://github.com/maltanar/oh-my-xilinx.git"
 AVNET_BDF_URL="https://github.com/Avnet/bdf.git"
 XIL_BDF_URL="https://github.com/Xilinx/XilinxBoardStore.git"
@@ -133,17 +133,23 @@ fetch_repo $RFSOC4x2_BDF_URL $RFSOC4x2_BDF_COMMIT $RFSOC4x2_BDF_DIR
 fetch_repo $KV260_BDF_URL $KV260_BDF_COMMIT $KV260_SOM_BDF_DIR
 fetch_repo $TYSOM_3A_BDF_URL $TYSOM_3A_BDF_COMMIT $TYSOM_3A_BDF_DIR
 
-# download extra Pynq board files and extract if needed
-if [ ! -d "$SCRIPTPATH/deps/board_files" ]; then
-    fetch_board_files
+# Can skip downloading of board files entirely if desired
+if [ "$FINN_SKIP_BOARD_FILES" = "1" ]; then
+    echo "Skipping download and verification of board files"
 else
-    cd $SCRIPTPATH
-    BOARD_FILES_MD5=$(find deps/board_files/ -type f -exec md5sum {} \; | sort -k 2 | md5sum | cut -d' ' -f 1)
-    if [ "$BOARD_FILES_MD5" = "$EXP_BOARD_FILES_MD5" ]; then
-        echo "Verified board files folder content md5: $BOARD_FILES_MD5"
-    else
-        echo "Board files folder content mismatch, removing and re-downloading"
-        rm -rf deps/board_files/
+    # download extra board files and extract if needed
+    if [ ! -d "$SCRIPTPATH/deps/board_files" ]; then
         fetch_board_files
+    else
+        cd $SCRIPTPATH
+        BOARD_FILES_MD5=$(find deps/board_files/ -type f -exec md5sum {} \; | sort -k 2 | md5sum | cut -d' ' -f 1)
+        if [ "$BOARD_FILES_MD5" = "$EXP_BOARD_FILES_MD5" ]; then
+            echo "Verified board files folder content md5: $BOARD_FILES_MD5"
+        else
+            echo "Board files folder md5: expected $BOARD_FILES_MD5 found $EXP_BOARD_FILES_MD5"
+            echo "Board files folder content mismatch, removing and re-downloading"
+            rm -rf deps/board_files/
+            fetch_board_files
+        fi
     fi
 fi

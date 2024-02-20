@@ -312,24 +312,24 @@ class InferUpsample(Transformation):
                     n.name + ": Upsampling is only supported for scales with "
                     "the first and last dimensions being 1 in NHWC."
                 )
-                spatial_scale = scales[1]
-                assert spatial_scale == int(spatial_scale), (
+                spatial_scale = scales[1:3]
+                assert np.array_equal(spatial_scale, spatial_scale.astype(int)), (
                     "%s: Upsampling is only supported for integer scales." % n.name
                 )
-                is_shape_square_2d = in_shape[1] == in_shape[2]
+                is_shape_2d = in_shape[1] > 1 and in_shape[2] > 1
                 is_shape_1d = in_shape[1] > 1 and in_shape[2] == 1
 
-                assert is_shape_square_2d or is_shape_1d, (
-                    "%s: Upsampling is only supported for 1D H or 2D square inputs." % n.name
+                assert is_shape_2d or is_shape_1d, (
+                    "%s: Upsampling is only supported for 1D H or 2D inputs." % n.name
                 )
 
                 # Extract information for HLS node
-                IFMDim = in_shape[1]
-                OFMDim = int(round(in_shape[1] * spatial_scale))
+                IFMDim = in_shape[1:3]
+                OFMDim = np.multiply(IFMDim, spatial_scale).astype(int).tolist()
                 NumChannels = in_shape[-1]
                 numInputVectors = in_shape[0]
                 inputDataType = dt.name
-                dim_mode = 0 if is_shape_square_2d else 1
+                dim_mode = 0 if is_shape_2d else 1
 
                 # Insert the HLSCustomOp node
                 Upsample_HLS_node = helper.make_node(
