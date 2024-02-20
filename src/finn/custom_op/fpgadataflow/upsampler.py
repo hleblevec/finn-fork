@@ -47,52 +47,58 @@ class UpsampleNearestNeighbour_Batch(HLSCustomOp):
     def get_nodeattr_types(self):
         my_attrs = {
             # Size of the output feature map
-            "OFMDim": ("i", True, 0),
+            "OFMDim": ("ints", True, []),
             # Size of the input feature map
-            "IFMDim": ("i", True, 0),
+            "IFMDim": ("ints", True, []),
             # Amount of channels of the input feature map
             "NumChannels": ("i", True, 0),
             # FINN input datatype
             "inputDataType": ("s", True, ""),
             # Batch size
             "numInputVectors": ("i", False, 1),
-            # Dimensionality mode: 0 = 2D square, 1 = 1D in H dim
+            # Dimensionality mode: 0 = 2D, 1 = 1D in H dim
             "DimMode": ("i", False, 0),
         }
         my_attrs.update(super().get_nodeattr_types())
         return my_attrs
 
     def get_exp_cycles(self):
-        OFMDim = self.get_nodeattr("OFMDim")
+        
         batch_size = self.get_nodeattr("numInputVectors")
         is_2d = self.get_nodeattr("DimMode") == 0
         reps = 1
         if is_2d:
-            OFMDim = OFMDim * OFMDim
+            OFMDim_H, OFMDim_W = self.get_nodeattr("OFMDim")
+            OFMDim = OFMDim_H * OFMDim_W
             reps = batch_size
+        else:
+            OFMDim= self.get_nodeattr("OFMDim")[0]
         exp_cycles = OFMDim * reps
         return int(exp_cycles)
 
     def get_normal_input_shape(self, ind=0):
-        IFMDim = self.get_nodeattr("IFMDim")
+       
         num_ch = self.get_nodeattr("NumChannels")
         batch = self.get_nodeattr("numInputVectors")
         is_2d = self.get_nodeattr("DimMode") == 0
         if is_2d:
-            ishape = (batch, IFMDim, IFMDim, num_ch)
+            IFMDim_H, IFMDim_W = self.get_nodeattr("IFMDim")
+            ishape = (batch, IFMDim_H, IFMDim_W, num_ch)
         else:
-            ishape = (batch, IFMDim, 1, num_ch)
+            IFMDim = self.get_nodeattr("IFMDim")
+            ishape = (batch, IFMDim[0], 1, num_ch)
         return ishape
 
     def get_normal_output_shape(self, ind=0):
-        OFMDim = self.get_nodeattr("OFMDim")
         num_ch = self.get_nodeattr("NumChannels")
         batch = self.get_nodeattr("numInputVectors")
         is_2d = self.get_nodeattr("DimMode") == 0
         if is_2d:
-            oshape = (batch, OFMDim, OFMDim, num_ch)
+            OFMDim_H, OFMDim_W = self.get_nodeattr("OFMDim")
+            oshape = (batch, OFMDim_H, OFMDim_W, num_ch)
         else:
-            oshape = (batch, OFMDim, 1, num_ch)
+            OFMDim = self.get_nodeattr("OFMDim")
+            oshape = (batch, OFMDim[0], 1, num_ch)
         return oshape
 
     def get_folded_input_shape(self, ind=0):
@@ -162,11 +168,24 @@ class UpsampleNearestNeighbour_Batch(HLSCustomOp):
         ibits = self.get_input_datatype().bitwidth()
         self.code_gen_dict["$DEFINES$"] += ["#define Input_precision {}".format(ibits)]
 
-        idim = self.get_nodeattr("IFMDim")
-        self.code_gen_dict["$DEFINES$"] += ["#define IFMDim {}".format(idim)]
+        is_2d = self.get_nodeattr("DimMode") == 0
 
-        odim = self.get_nodeattr("OFMDim")
-        self.code_gen_dict["$DEFINES$"] += ["#define OFMDim {}".format(odim)]
+        if is_2d:
+            idim_h, idim_w = self.get_nodeattr("IFMDim")
+            self.code_gen_dict["$DEFINES$"] += ["#define IFMDim_H {}".format(idim_h)]
+            self.code_gen_dict["$DEFINES$"] += ["#define IFMDim_W {}".format(idim_w)]
+
+            odim_h, odim_w = self.get_nodeattr("OFMDim")
+            self.code_gen_dict["$DEFINES$"] += ["#define OFMDim_H {}".format(odim_h)]
+            self.code_gen_dict["$DEFINES$"] += ["#define OFMDim_W {}".format(odim_w)]
+        
+        else:
+            idim= self.get_nodeattr("IFMDim")
+            self.code_gen_dict["$DEFINES$"] += ["#define IFMDim {}".format(idim[0])]
+
+            odim = self.get_nodeattr("OFMDim")
+            self.code_gen_dict["$DEFINES$"] += ["#define OFMDim {}".format(odim[0])]
+
 
         batch_size = self.get_nodeattr("numInputVectors")
         self.code_gen_dict["$DEFINES$"] += ["#define numReps {}".format(batch_size)]
@@ -214,7 +233,7 @@ class UpsampleNearestNeighbour_Batch(HLSCustomOp):
         batch = self.get_nodeattr("numInputVectors")
         if is_2d:
             self.code_gen_dict["$DOCOMPUTE$"] = [
-                """UpsampleNearestNeighbour_Batch<OFMDim, IFMDim, IFMChannels,
+                """UpsampleNearestNeighbour_Batch<OFMDim_H, OFMDim_W, IFMDim_H, IFMDim_W, IFMChannels,
                 ap_uint<Input_precision> > (in0_%s, out_%s, numReps);"""
                 % (self.hls_sname(), self.hls_sname())
             ]
