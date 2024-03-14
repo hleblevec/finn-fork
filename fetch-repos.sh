@@ -27,8 +27,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#QONNX_COMMIT="47e4357faf66b5b0d1bf77bf908bb47752421e5b"
-QONNX_COMMIT="19c73fe733f46a7b7f8b3235369f11f2977e94f6"
+QONNX_COMMIT="c5bd87f05e0b6ac6bc578d38161e7dceec1077d9"
 FINN_EXP_COMMIT="de99347e936d51715f5356a1b6c64e37b91c23c2"
 # BREVITAS_COMMIT="84f42259ec869eb151af4cb8a8b23ad925f493db"
 BREVITAS_COMMIT="18c5ba7999dbe34f0dee39b360c8b4868abec86f"
@@ -42,8 +41,7 @@ RFSOC4x2_BDF_COMMIT="13fb6f6c02c7dfd7e4b336b18b959ad5115db696"
 KV260_BDF_COMMIT="98e0d3efc901f0b974006bc4370c2a7ad8856c79"
 EXP_BOARD_FILES_MD5="226ca927a16ea4ce579f1332675e9e9a"
 
-# QONNX_URL="https://github.com/fastmachinelearning/qonnx.git"
-QONNX_URL="https://github.com/i-colbert/qonnx.git"
+QONNX_URL="https://github.com/fastmachinelearning/qonnx.git"
 FINN_EXP_URL="https://github.com/Xilinx/finn-experimental.git"
 # BREVITAS_URL="https://github.com/Xilinx/brevitas.git"
 BREVITAS_URL="https://github.com/i-colbert/brevitas.git"
