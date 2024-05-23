@@ -109,7 +109,7 @@ class PyTorchTestModel(nn.Module):
 # execution mode
 @pytest.mark.parametrize("exec_mode", ["cppsim", "rtlsim"])
 # whether to use 1D or 2D square testcases
-@pytest.mark.parametrize("is_1d", [True, False])
+@pytest.mark.parametrize("is_1d", [False, True])
 @pytest.mark.fpgadataflow
 @pytest.mark.vivado
 @pytest.mark.slow

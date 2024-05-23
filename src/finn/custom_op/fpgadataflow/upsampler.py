@@ -159,11 +159,13 @@ class UpsampleNearestNeighbour(HWCustomOp):
         node = self.onnx_node
         inp_values = context[node.input[0]]
         ishape = inp_values.shape
-        odim = self.get_nodeattr("OFMDim")
-        idim = self.get_nodeattr("IFMDim")
-        if ishape[1] == ishape[2]:
-            scales_val = [1, int(round(odim / idim)), int(round(odim / idim)), 1]
+        if ishape[1] > 1 and ishape[2] > 1:
+            odim_h, odim_w = self.get_nodeattr("OFMDim")
+            idim_h, idim_w = self.get_nodeattr("IFMDim")
+            scales_val = [1, int(round(odim_h / idim_h)), int(round(odim_w / idim_w)), 1]
         elif ishape[1] > 1 and ishape[2] == 1:
+            odim = self.get_nodeattr("OFMDim")[0]
+            idim = self.get_nodeattr("IFMDim")[0]
             scales_val = [1, int(round(odim / idim)), 1, 1]
         else:
             warnings.warn(

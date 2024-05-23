@@ -57,28 +57,39 @@ class UpsampleNearestNeighbour_hls(UpsampleNearestNeighbour, HLSBackend):
 
     def defines(self, var):
         self.code_gen_dict["$DEFINES$"] = []
-
         ifm_ch = self.get_nodeattr("NumChannels")
         self.code_gen_dict["$DEFINES$"] += ["#define IFMChannels {}".format(ifm_ch)]
 
         ibits = self.get_input_datatype().bitwidth()
         self.code_gen_dict["$DEFINES$"] += ["#define Input_precision {}".format(ibits)]
 
-        idim = self.get_nodeattr("IFMDim")
-        self.code_gen_dict["$DEFINES$"] += ["#define IFMDim {}".format(idim)]
+        is_2d = self.get_nodeattr("DimMode") == 0
 
-        odim = self.get_nodeattr("OFMDim")
-        self.code_gen_dict["$DEFINES$"] += ["#define OFMDim {}".format(odim)]
+        if is_2d:
+            idim_h, idim_w = self.get_nodeattr("IFMDim")
+            self.code_gen_dict["$DEFINES$"] += ["#define IFMDim_H {}".format(idim_h)]
+            self.code_gen_dict["$DEFINES$"] += ["#define IFMDim_W {}".format(idim_w)]
+
+            odim_h, odim_w = self.get_nodeattr("OFMDim")
+            self.code_gen_dict["$DEFINES$"] += ["#define OFMDim_H {}".format(odim_h)]
+            self.code_gen_dict["$DEFINES$"] += ["#define OFMDim_W {}".format(odim_w)]
+        
+        else:
+            idim= self.get_nodeattr("IFMDim")
+            self.code_gen_dict["$DEFINES$"] += ["#define IFMDim {}".format(idim[0])]
+
+            odim = self.get_nodeattr("OFMDim")
+            self.code_gen_dict["$DEFINES$"] += ["#define OFMDim {}".format(odim[0])]
+
 
         batch_size = self.get_nodeattr("numInputVectors")
         self.code_gen_dict["$DEFINES$"] += ["#define numReps {}".format(batch_size)]
-
     def docompute(self):
         is_2d = self.get_nodeattr("DimMode") == 0
         batch = self.get_nodeattr("numInputVectors")
         if is_2d:
             self.code_gen_dict["$DOCOMPUTE$"] = [
-                """UpsampleNearestNeighbour_Batch<OFMDim, IFMDim, IFMChannels,
+                """UpsampleNearestNeighbour_Batch<OFMDim_H, OFMDim_W, IFMDim_H, IFMDim_W, IFMChannels,
                 ap_uint<Input_precision> > (in0_%s, out_%s, numReps);"""
                 % (self.hls_sname(), self.hls_sname())
             ]

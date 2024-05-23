@@ -334,8 +334,8 @@ class InferUpsample(Transformation):
                 )
 
                 # Extract information for HW node
-                IFMDim = in_shape[1]
-                OFMDim = int(round(in_shape[1] * spatial_scale))
+                IFMDim = in_shape[1:3]
+                OFMDim = np.multiply(IFMDim, spatial_scale).astype(int).tolist()
                 NumChannels = in_shape[-1]
                 numInputVectors = in_shape[0]
                 inputDataType = dt.name
