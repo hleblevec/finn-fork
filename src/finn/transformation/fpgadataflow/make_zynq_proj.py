@@ -324,7 +324,7 @@ class ZynqBuild(Transformation):
             InsertDWC(),
             SpecializeLayers(),
             Floorplan(),
-            CreateDataflowPartition(partition_model_dir=self.partition_model_dir),
+            CreateDataflowPartition(partition_model_dir=self.partition_model_dir, check=False),
         ]
         for trn in prep_transforms:
             model = model.transform(trn)

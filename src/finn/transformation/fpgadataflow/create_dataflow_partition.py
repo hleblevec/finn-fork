@@ -43,12 +43,13 @@ class CreateDataflowPartition(Transformation):
     that indicates the filename for the second graph that only contains
     dataflow nodes. No action is taken if there are no dataflow nodes."""
 
-    def __init__(self, partition_model_dir=None):
+    def __init__(self, partition_model_dir=None, check=True):
         super().__init__()
         if partition_model_dir is None:
             self.partition_model_dir = make_build_dir("dataflow_partition_")
         else:
             self.partition_model_dir = partition_model_dir
+        self.check = check
 
     def apply(self, model):
         def filter_fc_extw(x):
@@ -79,7 +80,8 @@ class CreateDataflowPartition(Transformation):
         # first, use the generic partitioning functionality to split up the graph
         parent_model = model.transform(
             PartitionFromLambda(
-                partitioning=assign_partition_id, partition_dir=self.partition_model_dir
+                partitioning=assign_partition_id, partition_dir=self.partition_model_dir,
+                check = self.check,
             )
         )
         # change node types to StreamingDataflowPartition
