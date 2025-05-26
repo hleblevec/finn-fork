@@ -30,7 +30,6 @@
 import pytest
 
 import numpy as np
-import os
 from onnx import TensorProto, helper
 from qonnx.core.datatype import DataType
 from qonnx.core.modelwrapper import ModelWrapper
@@ -50,7 +49,7 @@ from finn.transformation.fpgadataflow.set_exec_mode import SetExecMode
 from finn.transformation.fpgadataflow.specialize_layers import SpecializeLayers
 from finn.util.basic import pynq_part_map
 
-test_pynq_board = os.getenv("PYNQ_BOARD", default="Pynq-Z1")
+test_pynq_board = "Pynq-Z1"
 test_fpga_part = pynq_part_map[test_pynq_board]
 target_clk_ns = 10
 
@@ -135,7 +134,7 @@ def test_fpgadataflow_fmpadding(idim, pad, num_ch, simd, idt, mode, impl_style):
     assert y_produced.shape == expected_oshape
     assert (y_produced == y_expected).all(), "HW layer execution failed"
 
-    model = model.transform(SpecializeLayers())
+    model = model.transform(SpecializeLayers(test_fpga_part))
 
     model = model.transform(InferShapes())
     model = model.transform(SetExecMode(mode))

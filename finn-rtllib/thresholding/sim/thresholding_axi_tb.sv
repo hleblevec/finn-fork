@@ -110,7 +110,7 @@ module thresholding_axi_tb #(
 	uwire  ovld;
 	uwire [PE-1:0][N-1:0]  odat;
 
-	thresholding_axi #(.N(N), .K(K), .C(C), .PE(PE), .SIGNED(0), .USE_AXILITE(1)) dut (
+	thresholding_axi #(.N(N), .WI(K), .WT(K), .C(C), .PE(PE), .SIGNED(0), .USE_AXILITE(1)) dut (
 		.ap_clk(clk), .ap_rst_n(!rst),
 
 		// Configuration
@@ -232,7 +232,7 @@ module thresholding_axi_tb #(
 			end
 		join_any
 		done <= 1;
-		repeat(N+6)  @(posedge clk);
+		repeat(2*N+8)  @(posedge clk);
 
 		assert(QW.size() == 0) else begin
 			$error("Missing %0d outputs.", QW.size());

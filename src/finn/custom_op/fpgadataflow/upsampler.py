@@ -61,7 +61,6 @@ class UpsampleNearestNeighbour(HWCustomOp):
         return my_attrs
 
     def get_exp_cycles(self):
-        
         batch_size = self.get_nodeattr("numInputVectors")
         is_2d = self.get_nodeattr("DimMode") == 0
         reps = 1
@@ -70,12 +69,11 @@ class UpsampleNearestNeighbour(HWCustomOp):
             OFMDim = OFMDim_H * OFMDim_W
             reps = batch_size
         else:
-            OFMDim= self.get_nodeattr("OFMDim")[0]
+            OFMDim = self.get_nodeattr("OFMDim")[0]
         exp_cycles = OFMDim * reps
         return int(exp_cycles)
 
     def get_normal_input_shape(self, ind=0):
-       
         num_ch = self.get_nodeattr("NumChannels")
         batch = self.get_nodeattr("numInputVectors")
         is_2d = self.get_nodeattr("DimMode") == 0
@@ -107,13 +105,6 @@ class UpsampleNearestNeighbour(HWCustomOp):
         normal_oshape = list(self.get_normal_output_shape())
         return tuple(normal_oshape)
 
-    def make_shape_compatible_op(self, model):
-        exp_ishape = self.get_normal_input_shape()
-        oshape = self.get_normal_output_shape()
-        ishape = tuple(model.get_tensor_shape(self.onnx_node.input[0]))
-        assert ishape == exp_ishape, "Unexpect input shape for UpsampleNearestNeighbour_Batch."
-        return super().make_const_shape_op(oshape)
-
     def infer_node_datatype(self, model):
         node = self.onnx_node
         # data type stays the same
@@ -127,9 +118,6 @@ class UpsampleNearestNeighbour(HWCustomOp):
             warnings.warn(warn_str)
         self.set_nodeattr("inputDataType", idt.name)
         model.set_tensor_datatype(node.output[0], idt)
-
-    def verify_node(self):
-        pass
 
     def get_input_datatype(self, ind=0):
         """Returns FINN DataType of input."""

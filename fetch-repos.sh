@@ -27,7 +27,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-QONNX_COMMIT="f44023adc40a4d2895d82a91b5bcbb80c72e739e"
+QONNX_COMMIT="1ca4f79e1ecbf4a7582fe9ba094aff41b13f18c4"
 FINN_EXP_COMMIT="7a587b2ccc8fbd4daaec946f3bc66c273f85451b"
 BREVITAS_COMMIT="84f42259ec869eb151af4cb8a8b23ad925f493db"
 PYVERILATOR_COMMIT="ce0a08c20cb8c1d1e84181d6f392390f846adbd1"
@@ -40,11 +40,11 @@ RFSOC4x2_BDF_COMMIT="13fb6f6c02c7dfd7e4b336b18b959ad5115db696"
 KV260_BDF_COMMIT="98e0d3efc901f0b974006bc4370c2a7ad8856c79"
 EXP_BOARD_FILES_MD5="226ca927a16ea4ce579f1332675e9e9a"
 TYSOM_3A_BDF_COMMIT="8fab3e276ad5a1ea101b556579d820874c1d449f"
+PYXSI_COMMIT="941bb62a4a3cc2c8cf2a9b89187c60bb0b776658"
 
 QONNX_URL="https://github.com/hleblevec/qonnx-fork.git"
 FINN_EXP_URL="https://github.com/Xilinx/finn-experimental.git"
 BREVITAS_URL="https://github.com/Xilinx/brevitas.git"
-PYVERILATOR_URL="https://github.com/maltanar/pyverilator.git"
 CNPY_URL="https://github.com/rogersce/cnpy.git"
 HLSLIB_URL="https://github.com/hleblevec/finn-hlslib-fork.git"
 OMX_URL="https://github.com/maltanar/oh-my-xilinx.git"
@@ -53,11 +53,11 @@ XIL_BDF_URL="https://github.com/Xilinx/XilinxBoardStore.git"
 RFSOC4x2_BDF_URL="https://github.com/RealDigitalOrg/RFSoC4x2-BSP.git"
 KV260_BDF_URL="https://github.com/Xilinx/XilinxBoardStore.git"
 TYSOM_3A_BDF_URL="https://github.com/aldec/TySOM-3A-ZU19EG.git"
+PYXSI_URL="https://github.com/maltanar/pyxsi.git"
 
 QONNX_DIR="qonnx"
 FINN_EXP_DIR="finn-experimental"
 BREVITAS_DIR="brevitas"
-PYVERILATOR_DIR="pyverilator"
 CNPY_DIR="cnpy"
 HLSLIB_DIR="finn-hlslib"
 OMX_DIR="oh-my-xilinx"
@@ -66,6 +66,7 @@ XIL_BDF_DIR="xil-bdf"
 RFSOC4x2_BDF_DIR="rfsoc4x2-bdf"
 KV260_SOM_BDF_DIR="kv260-som-bdf"
 TYSOM_3A_BDF_DIR="tysom-3a-zu19eg-bdf"
+PYXSI_DIR="pyxsi"
 
 # absolute path to this script, e.g. /home/user/bin/foo.sh
 SCRIPT=$(readlink -f "$0")
@@ -116,14 +117,13 @@ fetch_board_files() {
     cp -r $SCRIPTPATH/deps/$RFSOC4x2_BDF_DIR/board_files/rfsoc4x2 $SCRIPTPATH/deps/board_files/;
     cp -r $SCRIPTPATH/deps/$KV260_SOM_BDF_DIR/boards/Xilinx/kv260_som $SCRIPTPATH/deps/board_files/;
     cp -r $SCRIPTPATH/deps/$TYSOM_3A_BDF_DIR/Vivado-board_files/2020.2/TySOM-3A-ZU19EG $SCRIPTPATH/deps/board_files/;
-    # rm -r $SCRIPTPATH/deps/$TYSOM_3A_BDF_DIR/;
+    rm -rf $SCRIPTPATH/deps/$TYSOM_3A_BDF_DIR/;
     cd $OLD_PWD
 }
 
 fetch_repo $QONNX_URL $QONNX_COMMIT $QONNX_DIR
 fetch_repo $FINN_EXP_URL $FINN_EXP_COMMIT $FINN_EXP_DIR
 fetch_repo $BREVITAS_URL $BREVITAS_COMMIT $BREVITAS_DIR
-fetch_repo $PYVERILATOR_URL $PYVERILATOR_COMMIT $PYVERILATOR_DIR
 fetch_repo $CNPY_URL $CNPY_COMMIT $CNPY_DIR
 fetch_repo $HLSLIB_URL $HLSLIB_COMMIT $HLSLIB_DIR
 fetch_repo $OMX_URL $OMX_COMMIT $OMX_DIR
@@ -132,6 +132,7 @@ fetch_repo $XIL_BDF_URL $XIL_BDF_COMMIT $XIL_BDF_DIR
 fetch_repo $RFSOC4x2_BDF_URL $RFSOC4x2_BDF_COMMIT $RFSOC4x2_BDF_DIR
 fetch_repo $KV260_BDF_URL $KV260_BDF_COMMIT $KV260_SOM_BDF_DIR
 fetch_repo $TYSOM_3A_BDF_URL $TYSOM_3A_BDF_COMMIT $TYSOM_3A_BDF_DIR
+fetch_repo $PYXSI_URL $PYXSI_COMMIT $PYXSI_DIR
 
 # Can skip downloading of board files entirely if desired
 if [ "$FINN_SKIP_BOARD_FILES" = "1" ]; then

@@ -40,7 +40,6 @@ import torch
 import warnings
 from brevitas.export import export_qonnx
 from dataset_loading import cifar, mnist
-from distutils.dir_util import copy_tree
 from qonnx.core.datatype import DataType
 from qonnx.core.modelwrapper import ModelWrapper
 from qonnx.custom_op.registry import getCustomOp
@@ -59,7 +58,7 @@ from qonnx.transformation.insert_topk import InsertTopK
 from qonnx.transformation.lower_convs_to_matmul import LowerConvsToMatMul
 from qonnx.transformation.merge_onnx_models import MergeONNXModels
 from qonnx.util.cleanup import cleanup as qonnx_cleanup
-from shutil import copy
+from shutil import copy, copytree
 
 import finn.transformation.fpgadataflow.convert_to_hw_layers as to_hw
 import finn.transformation.streamline.absorb as absorb
@@ -94,8 +93,8 @@ from finn.transformation.streamline.reorder import (
     MakeMaxPoolNHWC,
     MoveScalarLinearPastInvariants,
 )
+from finn.transformation.streamline.round_thresholds import RoundAndClipThresholds
 from finn.util.basic import get_finn_root, make_build_dir, test_board_map
-from finn.util.fpgadataflow import is_fpgadataflow_node
 from finn.util.pytorch import ToTensor
 from finn.util.test import (
     execute_parent,
@@ -112,8 +111,9 @@ mem_mode = "internal_decoupled"
 rtlsim_trace = False
 
 
-def get_checkpoint_name(topology, wbits, abits, step):
-    return build_dir + "/end2end_%s_w%da%d_%s.onnx" % (
+def get_checkpoint_name(board, topology, wbits, abits, step):
+    return build_dir + "/end2end_%s_%s_w%da%d_%s.onnx" % (
+        board,
         topology,
         wbits,
         abits,
@@ -131,6 +131,7 @@ def fold_tfc(model):
         fcl_inst.set_nodeattr("SIMD", simd)
         fcl_inst.set_nodeattr("ram_style", ramstyle)
         fcl_inst.set_nodeattr("mem_mode", "internal_decoupled")
+        fcl_inst.set_nodeattr("resType", "lut")
     # set parallelism for input quantizer to be same as first layer's SIMD
     inp_qnt_node = model.get_nodes_by_op_type("Thresholding_rtl")[0]
     inp_qnt = getCustomOp(inp_qnt_node)
@@ -155,6 +156,7 @@ def fold_lfc(model):
         fcl_inst.set_nodeattr("ram_style", ramstyle)
         fcl_inst.set_nodeattr("runtime_writeable_weights", 1)
         fcl_inst.set_nodeattr("mem_mode", "internal_decoupled")
+        fcl_inst.set_nodeattr("resType", "lut")
     # set parallelism for input quantizer to be same as first layer's SIMD
     inp_qnt_node = model.get_nodes_by_op_type("Thresholding_rtl")[0]
     inp_qnt = getCustomOp(inp_qnt_node)
@@ -181,12 +183,14 @@ def fold_cnv_large(model):
         fcl_inst.set_nodeattr("PE", pe)
         fcl_inst.set_nodeattr("SIMD", simd)
         fcl_inst.set_nodeattr("mem_mode", "internal_decoupled")
+        fcl_inst.set_nodeattr("resType", "lut")
 
-    swg_layers = model.get_nodes_by_op_type("ConvolutionInputGenerator_hls")
+    swg_layers = model.get_nodes_by_op_type("ConvolutionInputGenerator_rtl")
     for i in range(len(swg_layers)):
         swg_inst = getCustomOp(swg_layers[i])
         simd = folding[i][1]
         swg_inst.set_nodeattr("SIMD", simd)
+        swg_inst.set_nodeattr("ram_style", "distributed")
     return model
 
 
@@ -197,11 +201,11 @@ def fold_cnv_small(model):
         (8, 3, "distributed"),
         (16, 16, "distributed"),
         (8, 16, "auto"),
-        (8, 16, "block"),
+        (8, 16, "distributed"),
         (4, 8, "auto"),
         (1, 8, "auto"),
-        (1, 2, "distributed"),
-        (2, 2, "block"),
+        (1, 2, "block"),
+        (2, 2, "auto"),
         (5, 1, "distributed"),
     ]
     for fcl, (pe, simd, ramstyle) in zip(fc_layers, folding):
@@ -210,12 +214,18 @@ def fold_cnv_small(model):
         fcl_inst.set_nodeattr("SIMD", simd)
         fcl_inst.set_nodeattr("ram_style", ramstyle)
         fcl_inst.set_nodeattr("mem_mode", "internal_decoupled")
+        fcl_inst.set_nodeattr("resType", "lut")
 
-    swg_layers = model.get_nodes_by_op_type("ConvolutionInputGenerator_hls")
+    swg_layers = model.get_nodes_by_op_type("ConvolutionInputGenerator_rtl")
     for i in range(len(swg_layers)):
         swg_inst = getCustomOp(swg_layers[i])
         simd = folding[i][1]
         swg_inst.set_nodeattr("SIMD", simd)
+        swg_inst.set_nodeattr("ram_style", "distributed")
+    inp_qnt_node = model.get_nodes_by_op_type("Thresholding_rtl")[0]
+    inp_qnt = getCustomOp(inp_qnt_node)
+    inp_qnt.set_nodeattr("depth_trigger_uram", 32000)
+    inp_qnt.set_nodeattr("depth_trigger_bram", 32000)
     return model
 
 
@@ -310,7 +320,6 @@ def deploy_based_on_board(model, model_title, topology, wbits, abits, board):
     # create directory for deployment files
     deployment_dir = deploy_dir_root + "/" + board + "/" + model_title
     os.makedirs(deployment_dir)
-    model.set_metadata_prop("pynq_deployment_dir", deployment_dir)
 
     # get and copy necessary files
     # .bit and .hwh file
@@ -347,7 +356,7 @@ def deploy_based_on_board(model, model_title, topology, wbits, abits, board):
 
     # driver.py and python libraries
     pynq_driver_dir = model.get_metadata_prop("pynq_driver_dir")
-    copy_tree(pynq_driver_dir, deployment_dir)
+    copytree(pynq_driver_dir, deployment_dir, dirs_exist_ok=True)
     model.set_metadata_prop("pynq_deploy_dir", deployment_dir)
 
 
@@ -441,11 +450,16 @@ def pytest_generate_tests(metafunc):
             scenarios.extend(test_cases)
 
     if len(scenarios) > 0:
-        for scenario in scenarios:
+        for i, scenario in enumerate(scenarios):
             idlist.append(scenario[0])
             items = scenario[1].items()
             argnames = [x[0] for x in items]
-            argvalues.append([x[1] for x in items])
+            argvalues_scenario = [x[1] for x in items]
+            argvalues.append(
+                pytest.param(
+                    *argvalues_scenario, marks=pytest.mark.xdist_group(name="bnn_pynq_%d" % i)
+                )
+            )
         metafunc.parametrize(argnames, argvalues, ids=idlist, scope="class")
 
 
@@ -461,7 +475,7 @@ class TestEnd2End:
         if topology == "lfc" and not (wbits == 1 and abits == 1):
             pytest.skip("Skipping certain lfc configs")
         (model, ishape) = get_trained_network_and_ishape(topology, wbits, abits)
-        chkpt_name = get_checkpoint_name(topology, wbits, abits, "export")
+        chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "export")
         export_qonnx(model, torch.randn(ishape), chkpt_name, opset_version=13)
         qonnx_cleanup(chkpt_name, out_file=chkpt_name)
         model = ModelWrapper(chkpt_name)
@@ -470,7 +484,7 @@ class TestEnd2End:
         assert os.path.isfile(chkpt_name)
 
     def test_import_and_tidy(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "export")
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "export")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         model = model.transform(InferShapes())
         model = model.transform(FoldConstants())
@@ -478,17 +492,17 @@ class TestEnd2End:
         model = model.transform(GiveReadableTensorNames())
         model = model.transform(InferDataTypes())
         model = model.transform(RemoveStaticGraphInputs())
-        chkpt = get_checkpoint_name(topology, wbits, abits, "import_and_tidy")
+        chkpt = get_checkpoint_name(board, topology, wbits, abits, "import_and_tidy")
         model.save(chkpt)
 
     def test_add_pre_and_postproc(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "import_and_tidy")
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "import_and_tidy")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         global_inp_name = model.graph.input[0].name
         ishape = model.get_tensor_shape(global_inp_name)
         # preprocessing: torchvision's ToTensor divides uint8 inputs by 255
         totensor_pyt = ToTensor()
-        chkpt_preproc_name = get_checkpoint_name(topology, wbits, abits, "preproc")
+        chkpt_preproc_name = get_checkpoint_name(board, topology, wbits, abits, "preproc")
         export_qonnx(totensor_pyt, torch.randn(ishape), chkpt_preproc_name, opset_version=13)
         qonnx_cleanup(chkpt_preproc_name, out_file=chkpt_preproc_name)
         pre_model = ModelWrapper(chkpt_preproc_name)
@@ -505,7 +519,7 @@ class TestEnd2End:
         model.set_tensor_datatype(global_inp_name, DataType["UINT8"])
         # postprocessing: insert Top-1 node at the end
         model = model.transform(InsertTopK(k=1))
-        chkpt_name = get_checkpoint_name(topology, wbits, abits, "pre_post")
+        chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "pre_post")
         # tidy-up again
         model = model.transform(InferShapes())
         model = model.transform(FoldConstants())
@@ -517,7 +531,7 @@ class TestEnd2End:
         assert os.path.isfile(chkpt_name)
 
     def test_streamline(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "pre_post")
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "pre_post")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         model = model.transform(absorb.AbsorbSignBiasIntoMultiThreshold())
         # move past any reshapes to be able to streamline input scaling
@@ -533,10 +547,10 @@ class TestEnd2End:
         model = model.transform(absorb.AbsorbScalarMulAddIntoTopK())
         model = model.transform(InferDataLayouts())
         model = model.transform(RemoveUnusedTensors())
-        model.save(get_checkpoint_name(topology, wbits, abits, "streamline"))
+        model.save(get_checkpoint_name(board, topology, wbits, abits, "streamline"))
 
     def test_convert_to_hw_layers(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "streamline")
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "streamline")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         if topology == "tfc" and wbits == 1 and abits == 1:
             # use standalone thresholds for tfc-w1a1 to also exercise that option
@@ -558,7 +572,7 @@ class TestEnd2End:
         model = model.transform(absorb.AbsorbConsecutiveTransposes())
         model = model.transform(GiveUniqueNodeNames())
         model = model.transform(InferDataLayouts())
-        model.save(get_checkpoint_name(topology, wbits, abits, "convert_to_hw_layers"))
+        model.save(get_checkpoint_name(board, topology, wbits, abits, "convert_to_hw_layers"))
         exp_layer_counts = {
             "tfc": [
                 ("Reshape", 1),
@@ -596,18 +610,12 @@ class TestEnd2End:
             assert len(model.get_nodes_by_op_type(op_type)) == exp_count
 
     def test_specialize_layers(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "convert_to_hw_layers")
+        build_data = get_build_env(board, target_clk_ns)
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "convert_to_hw_layers")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
-        # set preferred impl style to hls for all layers
-        force_hls_boards = ["Pynq-Z1", "U250"]
-        if topology == "cnv" and wbits == 2 and abits == 2 and board in force_hls_boards:
-            for node in model.graph.node:
-                if is_fpgadataflow_node(node):
-                    inst = getCustomOp(node)
-                    inst.set_nodeattr("preferred_impl_style", "hls")
-        model = model.transform(SpecializeLayers())
+        model = model.transform(SpecializeLayers(build_data["part"]))
         model = model.transform(GiveUniqueNodeNames())
-        model.save(get_checkpoint_name(topology, wbits, abits, "specialize_layers"))
+        model.save(get_checkpoint_name(board, topology, wbits, abits, "specialize_layers"))
         exp_layer_counts = {
             "tfc": [
                 ("Reshape", 1),
@@ -635,19 +643,9 @@ class TestEnd2End:
                 ("StreamingMaxPool_hls", 2),
                 ("LabelSelect_hls", 1),
             ],
-            "cnv-2-2": [
-                ("Transpose", 1),
-                ("Thresholding_hls", 1),
-                ("ConvolutionInputGenerator_hls", 6),
-                ("MVAU_hls", 9),
-                ("StreamingMaxPool_hls", 2),
-                ("LabelSelect_hls", 1),
-            ],
         }
         if topology == "tfc" and wbits == 1 and abits == 1:
             exp_key = "tfc-1-1"
-        elif topology == "cnv" and wbits == 2 and abits == 2 and board in force_hls_boards:
-            exp_key = "cnv-2-2"
         else:
             exp_key = topology
         exp_layer_counts = exp_layer_counts[exp_key]
@@ -655,44 +653,45 @@ class TestEnd2End:
             assert len(model.get_nodes_by_op_type(op_type)) == exp_count
 
     def test_create_dataflow_partition(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "specialize_layers")
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "specialize_layers")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         parent_model = model.transform(CreateDataflowPartition())
-        parent_model_chkpt = get_checkpoint_name(topology, wbits, abits, "dataflow_parent")
+        parent_model_chkpt = get_checkpoint_name(board, topology, wbits, abits, "dataflow_parent")
         parent_model.save(parent_model_chkpt)
         sdp_node = parent_model.get_nodes_by_op_type("StreamingDataflowPartition")[0]
         sdp_node = getCustomOp(sdp_node)
         dataflow_model_filename = sdp_node.get_nodeattr("model")
         dataflow_model = load_test_checkpoint_or_skip(dataflow_model_filename)
-        dataflow_model_chkpt = get_checkpoint_name(topology, wbits, abits, "dataflow_model")
+        dataflow_model_chkpt = get_checkpoint_name(board, topology, wbits, abits, "dataflow_model")
         dataflow_model.save(dataflow_model_chkpt)
 
     def test_fold(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "dataflow_model")
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "dataflow_model")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         folding_fxn = get_folding_function(topology, wbits, abits)
         model = folding_fxn(model)
-        model.save(get_checkpoint_name(topology, wbits, abits, "fold"))
+        model.save(get_checkpoint_name(board, topology, wbits, abits, "fold"))
 
     def test_minimize_bit_width(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "fold")
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "fold")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         model = model.transform(MinimizeAccumulatorWidth())
         model = model.transform(MinimizeWeightBitWidth())
-        curr_chkpt_name = get_checkpoint_name(topology, wbits, abits, "minimize_bit_width")
+        model = model.transform(RoundAndClipThresholds())
+        curr_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "minimize_bit_width")
         model.save(curr_chkpt_name)
 
     @pytest.mark.slow
     @pytest.mark.vivado
     def test_cppsim(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "minimize_bit_width")
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "minimize_bit_width")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         model = model.transform(PrepareCppSim())
         model = model.transform(CompileCppSim())
         model = model.transform(SetExecMode("cppsim"))
-        cppsim_chkpt = get_checkpoint_name(topology, wbits, abits, "cppsim")
+        cppsim_chkpt = get_checkpoint_name(board, topology, wbits, abits, "cppsim")
         model.save(cppsim_chkpt)
-        parent_chkpt = get_checkpoint_name(topology, wbits, abits, "dataflow_parent")
+        parent_chkpt = get_checkpoint_name(board, topology, wbits, abits, "dataflow_parent")
         (input_tensor_npy, output_tensor_npy) = get_golden_io_pair(
             topology, wbits, abits, return_topk=1
         )
@@ -705,21 +704,21 @@ class TestEnd2End:
         build_data = get_build_env(board, target_clk_ns)
         if build_data["kind"] == "alveo" and ("VITIS_PATH" not in os.environ):
             pytest.skip("VITIS_PATH not set")
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "fold")
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "minimize_bit_width")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         model = model.transform(GiveUniqueNodeNames())
         model = model.transform(PrepareIP(build_data["part"], target_clk_ns))
         model = model.transform(HLSSynthIP())
-        model.save(get_checkpoint_name(topology, wbits, abits, "ipgen_" + board))
+        model.save(get_checkpoint_name(board, topology, wbits, abits, "ipgen"))
 
     @pytest.mark.slow
     @pytest.mark.vivado
     def test_set_fifo_depths(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "ipgen_" + board)
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "ipgen")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         test_fpga_part = get_build_env(board, target_clk_ns)["part"]
-        if topology == "cnv" and wbits == 2 and abits == 2 and board == "Pynq-Z1":
-            # Enabling swg_exception for this single test case. Disabling the exception results in
+        if topology == "cnv" and abits == 2 and board == "Pynq-Z1":
+            # Enabling swg_exception for these test cases. Disabling the exception results in
             # a design that exceeds the resources of the Pynq-Z1 board. In future this should be
             # revisited and handled correctly as the swg_exception is poorly justified.
             model = model.transform(
@@ -730,16 +729,16 @@ class TestEnd2End:
 
         fifo_layers = model.get_nodes_by_op_type("StreamingFIFO_rtl")
         assert len(fifo_layers) > 0
-        model.save(get_checkpoint_name(topology, wbits, abits, "fifodepth_" + board))
+        model.save(get_checkpoint_name(board, topology, wbits, abits, "fifodepth"))
 
     @pytest.mark.slow
     @pytest.mark.vivado
     def test_ipstitch_rtlsim(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "fifodepth_" + board)
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "fifodepth")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         test_fpga_part = get_build_env(board, target_clk_ns)["part"]
         model = model.transform(InsertDWC())
-        model = model.transform(SpecializeLayers())
+        model = model.transform(SpecializeLayers(test_fpga_part))
         model = model.transform(GiveUniqueNodeNames())
         model = model.transform(AnnotateCycles())
         perf = model.analysis(dataflow_performance)
@@ -755,9 +754,9 @@ class TestEnd2End:
         if rtlsim_trace:
             model.set_metadata_prop("rtlsim_trace", "%s_w%da%d.vcd" % (topology, wbits, abits))
             os.environ["RTLSIM_TRACE_DEPTH"] = "3"
-        rtlsim_chkpt = get_checkpoint_name(topology, wbits, abits, "ipstitch_rtlsim_" + board)
+        rtlsim_chkpt = get_checkpoint_name(board, topology, wbits, abits, "ipstitch_rtlsim")
         model.save(rtlsim_chkpt)
-        parent_chkpt = get_checkpoint_name(topology, wbits, abits, "dataflow_parent")
+        parent_chkpt = get_checkpoint_name(board, topology, wbits, abits, "dataflow_parent")
         (input_tensor_npy, output_tensor_npy) = get_golden_io_pair(
             topology, wbits, abits, return_topk=1
         )
@@ -767,15 +766,15 @@ class TestEnd2End:
     @pytest.mark.slow
     @pytest.mark.vivado
     def test_throughput_rtlsim(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "ipstitch_rtlsim_" + board)
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "ipstitch_rtlsim")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         n_nodes = len(model.graph.node)
         perf_est = model.analysis(dataflow_performance)
-        ret_b1 = throughput_test_rtlsim(model, batchsize=1)
+        ret_b1 = throughput_test_rtlsim(model, target_clk_ns, batchsize=1)
         latency = int(ret_b1["cycles"])
         cycles_per_sample_est = perf_est["max_cycles"]
         batchsize = 2 * n_nodes
-        ret = throughput_test_rtlsim(model, batchsize=batchsize)
+        ret = throughput_test_rtlsim(model, target_clk_ns, batchsize=batchsize)
         res_cycles = ret["cycles"]
         est_cycles = latency + cycles_per_sample_est * batchsize
         assert (abs(res_cycles - est_cycles) / res_cycles) < 0.15
@@ -785,11 +784,11 @@ class TestEnd2End:
     def test_validate_top1(self, topology, wbits, abits, board):
         if "TEST_END2END_VALIDATE_TOP1" not in os.environ:
             pytest.skip("TEST_END2END_VALIDATE_TOP1 not set")
-        prepostproc_chkpt = get_checkpoint_name(topology, wbits, abits, "pre_post")
-        streamline_chkpt = get_checkpoint_name(topology, wbits, abits, "streamline")
-        parent_chkpt = get_checkpoint_name(topology, wbits, abits, "dataflow_parent")
-        cppsim_chkpt = get_checkpoint_name(topology, wbits, abits, "cppsim")
-        rtlsim_chkpt = get_checkpoint_name(topology, wbits, abits, "ipstitch_rtlsim_" + board)
+        prepostproc_chkpt = get_checkpoint_name(board, topology, wbits, abits, "pre_post")
+        streamline_chkpt = get_checkpoint_name(board, topology, wbits, abits, "streamline")
+        parent_chkpt = get_checkpoint_name(board, topology, wbits, abits, "dataflow_parent")
+        cppsim_chkpt = get_checkpoint_name(board, topology, wbits, abits, "cppsim")
+        rtlsim_chkpt = get_checkpoint_name(board, topology, wbits, abits, "ipstitch_rtlsim")
         dataset = topology2dataset(topology)
         assert measure_top1_accuracy(prepostproc_chkpt, dataset) > 80
         assert measure_top1_accuracy(streamline_chkpt, dataset) > 80
@@ -803,11 +802,11 @@ class TestEnd2End:
         build_data = get_build_env(board, target_clk_ns)
         if build_data["kind"] == "alveo" and ("VITIS_PATH" not in os.environ):
             pytest.skip("VITIS_PATH not set")
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "fifodepth_" + board)
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "fifodepth")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         model = model.transform(build_data["build_fxn"])
-        model = model.transform(AnnotateResources("synth"))
-        model.save(get_checkpoint_name(topology, wbits, abits, "build_" + board))
+        model = model.transform(AnnotateResources("synth", build_data["part"]))
+        model.save(get_checkpoint_name(board, topology, wbits, abits, "build"))
 
     @pytest.mark.slow
     @pytest.mark.vivado
@@ -816,16 +815,16 @@ class TestEnd2End:
         build_data = get_build_env(board, target_clk_ns)
         if build_data["kind"] == "alveo" and ("VITIS_PATH" not in os.environ):
             pytest.skip("VITIS_PATH not set")
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "build_" + board)
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "build")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         board_to_driver_platform = "alveo" if build_data["kind"] == "alveo" else "zynq-iodma"
         model = model.transform(MakePYNQDriver(board_to_driver_platform))
-        model.save(get_checkpoint_name(topology, wbits, abits, "driver_" + board))
+        model.save(get_checkpoint_name(board, topology, wbits, abits, "driver"))
 
     def test_deploy(self, topology, wbits, abits, board):
-        prev_chkpt_name = get_checkpoint_name(topology, wbits, abits, "driver_" + board)
+        prev_chkpt_name = get_checkpoint_name(board, topology, wbits, abits, "driver")
         model = load_test_checkpoint_or_skip(prev_chkpt_name)
         model_title = "%s_w%d_a%d_%s" % ("bnn", wbits, abits, topology)
         deploy_based_on_board(model, model_title, topology, wbits, abits, board)
         # save the model to be able to link it to the parent
-        model.save(get_checkpoint_name(topology, wbits, abits, "deploy_" + board))
+        model.save(get_checkpoint_name(board, topology, wbits, abits, "deploy"))
