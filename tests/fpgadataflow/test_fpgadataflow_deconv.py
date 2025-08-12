@@ -146,6 +146,8 @@ def create_deconv_node(idt, wdt, odt, k, idim, ifm_ch, ofm_ch, stride, padding, 
         inputDataType=idt.name,
         weightDataType=wdt.name,
         outputDataType=odt.name,
+        cpp_interface="hls_vector",
+        hls_style="freerunning",
     )
 
     node_list = [Deconv]
