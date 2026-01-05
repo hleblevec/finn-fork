@@ -98,7 +98,9 @@ class InferPixelPaddingDeconv(Transformation):
                 # Compute intermediate parameters
                 padded_odim_h = ifm_dim_h + (ifm_dim_h - 1) * (stride_h - 1)
                 padded_odim_w = ifm_dim_w + (ifm_dim_w - 1) * (stride_w - 1)
-                conv_padding = [dilation[0] * (k_h - 1) - pad[0]] * 4
+                conv_padding_h = dilation[0] * (k_h - 1) - pad[0]
+                conv_padding_w = dilation[1] * (k_w - 1) - pad[1]
+                conv_padding = [conv_padding_h, conv_padding_w] * 2
 
                 # create new intermediate values
                 inp_trans_out = helper.make_tensor_value_info(
